@@ -1,0 +1,270 @@
+---
+title: "Practical 4 Technical Notes"
+author: "Joshua Arrabaca - 220029955"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+---
+
+A multinom model was fitted using the nnet library The model had `admissions` as the response, and `died`, `white`, `los`, `age`, and `age80` as the predictors. ANOVA was conducted on the model, and it showed that age has p-values of 0.74 and 1.00 respectively. These were dropped and an updated model fitted.
+
+The new model only had `died`, `white` and `los` as the predictors, and these covariates had significant p-values (at least on the 0.01 level).
+
+Predictions were obtained using the median of `los` (which is 8.0), and used to predict the odds ratios when patients `died='0'` and `died='1'`. For these two sets of predictions, white was set to `'1'`, and los to `median(dat$los)`.
+
+Effects plot were also created using the `effects` library and `plot(effect(covariate, model))`.
+
+To check the model assumption of independence, plots were created using:
+
+      `plot(residuals(model)[,columnNumber])`
+
+where columnNumber referred to each of the column numbers for 'Elective', 'Urgent', and 'Emergency'.
+
+On checking the model assumptions, the linear relationship assumption is satisfied (when plotting the log odds of the outcomes against los). Independent observations also seems to hold true as residual plots show the values are fairly close to each other.
+
+Refer to the tables, plots and code outputs in the succeeding pages. 
+
+\newpage
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+## Loading the Data
+The data is loaded, and the following is the dataframe head.
+``` {r libraries_data}
+# Load the data
+dat <- read.csv("admissions.csv")
+
+# Set category columns as factors
+dat$provnum <- factor(dat$provnum)
+dat$died <- factor(dat$died)
+dat$white <- factor(dat$white)
+dat$age80 <- factor(dat$age80)
+dat$age <- factor(dat$age)
+dat$admission <- factor(dat$admission)
+
+# View the head of dat
+head(dat)
+View(dat)
+```
+The following show the levels of admission
+``` {r levels}
+# View levels of admission
+levels(dat$admission)
+```
+
+## Model Fitting
+This model was fitted with the following call:
+```{r fit, echo=FALSE}
+require(nnet)
+
+model <- multinom (admission ~ 
+                     died +
+                     white +
+                     age + 
+                     age80 + 
+                     los,
+                   data=dat,
+                   trace=FALSE)
+
+# View the summary (uncomment to view)
+model$call
+```
+
+``` {r coefs}
+
+# View the coefficients (uncomment to view)
+# coef(model)
+```
+
+```{r mode}
+# mode.age <- table(dat$age) |>
+#                   which.max() |>
+#                   names()
+# paste("Mode of Age Category:", mode.age )
+```
+
+``` {r median}
+
+# median(dat$los)
+# # hist(dat$los)
+# paste ("The median LOS is:", median(dat$los))
+```
+
+``` {r prediction}
+# 
+# pred_df <- data.frame(
+#                       # provnum = c(mode.provnum, mode.provnum),
+#                       died = c("1", "0"),
+#                       white = c("1", "1"),
+#                       los = c(median(dat$los), median(dat$los)),
+#                       age = c(mode.age, mode.age),
+#                       age80 = c("1", "1")
+#                       )
+# 
+# prediction <- predict(object = model, newdata = pred_df, type="probs")
+# prediction
+```
+
+
+``` {r oddsDied}
+# 
+# oddsElectEmergDied <- exp(log(prediction[1,1] / prediction[1,2]))
+# oddsElectUrgentDied <- exp(log(prediction[1,1] / prediction[1,3]))
+# oddsEmergUrgentDied <- exp(log(prediction[1,2] / prediction[1,3]))
+# paste(oddsElectEmergDied, oddsElectUrgentDied, oddsEmergUrgentDied)
+```
+
+``` {r oddsLived}
+# 
+# oddsElectEmergLived <- exp(log(prediction[2,1] / prediction[2,2]))
+# oddsElectUrgentLived <- exp(log(prediction[2,1] / prediction[2,3]))
+# oddsEmergUrgentLived <- exp(log(prediction[2,2] / prediction[2,3]))
+# paste(oddsElectEmergLived, oddsElectUrgentLived, oddsEmergUrgentLived)
+```
+
+## ANOVA for original model
+ANOVA was run on this model. Note that age and age80 have non-significant p-values:
+
+```{r anova}
+
+require(car)
+Anova (model)
+
+# require(MuMIn)
+# dredge(polrSimple, options(na.action = "na.fail"))
+
+# NOTE: Assignment instructions say to use Anova "Use the Anova function in the car library to carry out model selection for your data "
+```
+
+\newpage
+
+## Updating model
+The model is refitted to remove the age covariates:
+``` {r modelrefit,}
+model_updated <-update(model, .~. -age -age80, trace=FALSE)
+# summary(model_updated)
+model_updated$call
+```
+## ANOVA on Updated Model
+
+ANOVa was run again on the updated model, and the resulting ANOVA shows signficant p-values for 'died', 'white', and 'los'.
+
+``` {r anovaUpdated}
+Anova(model_updated)
+
+```
+
+## Predicted Probabilities in the Link Function
+When predictions are made, the following probabilities are obtained.
+```{r refit_predictions}
+
+pred_df_updated <- data.frame(
+                      died = c("1", "0"),
+                      white = c("1", "1"),
+                      los = c(median(dat$los), median(dat$los))
+                      )
+prediction_updated <- predict(object = model_updated,
+                              newdata = pred_df_updated, 
+                              type="probs")
+prediction_updated
+```
+## Odds Ratios for Patients Who Died
+The above probabilities are then taken as ratios, the log of each ratio computed, then the result is exponentiated. The following are the odds ratios for 'died=1' for 'Elective to Emergency', 'Elective to Urgent', and 'Emergency to Urgent' respectively:
+``` {r updated_odds_dead}
+oddsElectEmergDied_updated <- (exp(log(prediction_updated[1,1] / prediction_updated[1,2])))
+oddsElectUrgentDied_updated <- (exp(log(prediction_updated[1,1] / prediction_updated[1,3])))
+oddsEmergUrgentDied_updated <- (exp(log(prediction_updated[1,2] / prediction_updated[1,3])))
+paste(oddsElectEmergDied_updated,
+      oddsElectUrgentDied_updated,
+      oddsEmergUrgentDied_updated)
+
+```
+
+## Odds Ratios for Patients Who Lived
+Here, the same ratios are computed, but this time for 'Died=0'. These are the odds ratios for 'Elective to Emergency', 'Elective to Urgent', and 'Emergency to Urgent' respectively:
+``` {r updated_odds_lived}
+oddsElectEmergLived_updated <- (exp(log(prediction_updated[2,1] / prediction_updated[2,2])))
+oddsElectUrgentLived_updated <- (exp(log(prediction_updated[2,1] / prediction_updated[2,3])))
+oddsEmergUrgentLived_updated <- (exp(log(prediction_updated[2,2] / prediction_updated[2,3])))
+paste(oddsElectEmergLived_updated,
+      oddsElectUrgentLived_updated,
+      oddsEmergUrgentLived_updated)
+
+```
+
+## Effects Plots
+Plotting against `los` shows that Elections are at around 80% when los=0, but gradually decreases. Meanwhile, the probability of Emergency admission increases as length of stay increases. Urgent admissions only slightly increase to 20% before decreasing over the length of time.
+
+
+``` {r plot_los}
+
+require(effects)
+
+plot(effect("los", model_updated))
+```
+
+\newpage
+
+There is a slight effect of ethinicity here; patients who identify as 'white' tend to be admitted via 'Elective'. Non-white patients tend to be admitted as 'Urgent'.
+
+
+``` {r plot_white}
+plot(effect("white", model_updated))
+```
+
+\newpage
+
+There is also a slight effect for `died`, where 'Urgent' and 'Emergency' admission have slightly higher incidence of patients with died=1, compared to 'Elective' admissions.
+
+
+``` {r plot_died}
+plot(effect("died", model_updated))
+```
+
+\newpage
+
+# Model Assumptions
+* **Independent observations** - This model assumes that each admission did not affect other admissions. In the below plots, most of the residuals are grouped fairly close, with a few residuals stretching out.
+``` {r Independence_assumptions}
+plot(residuals(model_updated)[,1],
+     main = "Residuals of Elective",
+     xlab = "Index", ylab = "Residual Value")
+
+plot(residuals(model_updated)[,2],
+     main = "Residuals of Emergency",
+     xlab = "Index", ylab = "Residual Value")
+
+plot(residuals(model_updated)[,3],
+     main = "Residuals of Urgent",
+     xlab = "Index", ylab = "Residual Value")
+```
+
+\newpage
+
+* **Linear relationship with covariates, on log odds scale** - When plotting Length of Stay against the Log odds of the different admissions, a linear relationship can be seen in the plots.
+``` {r linear_assumptions}
+probs_elective <- predict(model_updated,
+        type="probs")[,1]
+
+probs_emergency <- predict(model_updated,
+        type="probs")[,2]
+
+probs_urgent <- predict(model_updated,
+        type="probs")[,3]
+
+plot(dat$los, log(probs_elective/probs_emergency),
+     main = "Length of Stay vs Log Odds of Elective to Emergency",
+     xlab = "Length of Stay", ylab = "Log Odds of Elective to Emergency")
+
+plot(dat$los, log(probs_elective/probs_urgent),
+     main = "Length of Stay vs Log Odds of Elective to Urgent",
+     xlab = "Length of Stay", ylab = "Log Odds of Elective to Urgent")
+
+plot(dat$los, log(probs_emergency/probs_urgent),
+     main = "Length of Stay vs Log Odds of Emergency to Urgent",
+     xlab = "Length of Stay", ylab = "Log Odds of Emergency to Urgent")
+```
+
+* **Independence from Irrelevant Alternatives (IIA)** - As with the above, it is assumed that admission odds do not affect other admission options
